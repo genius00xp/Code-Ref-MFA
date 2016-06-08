@@ -1,0 +1,1 @@
+select * from SessionValidator order by ID desc 
