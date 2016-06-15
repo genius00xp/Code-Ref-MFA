@@ -383,9 +383,10 @@ Sub ArchiveFile(byval FilePath,byval CoID)
 		
 		if fso.FileExists(DestFolder & "\" & FileName) then
             DeleteFileOnly(DestFolder & "\" & FileName)
-			NewFileName = FileName
 		end if
-		fso.MoveFile FilePath,DestFolder & "\" & NewFileName
+        NewFileName = FileName
+		fso.MoveFile FilePath,DestFolder & "\"
+        BuildArrayFromCsv(DestFolder & "\" & NewFileName)
 	end if
 End Sub
 Function ImportFTPFile(byval CoID)
@@ -483,7 +484,7 @@ Function BuildArrayFromCsv(filepath)    'Function to read file and load into an 
             "'" & SQLEncode(Date) & "'," & _
             "'" & SQLEncode(SGDperUnit) & "'," & _
             "'" & SQLEncode(UnitperSGD) & "'," & _
-            "'" & LongDate(now()) & "'" & _
+            "NULL" & _
             "); "
             
                         
@@ -493,7 +494,7 @@ Function BuildArrayFromCsv(filepath)    'Function to read file and load into an 
     Loop
 
     if errorMessage = "" then
-    ''if sqlstr <> "" then systemdb.execute(sqlstr)
+    if sqlstr <> "" then systemdb.execute(sqlstr)
     end if
     inputFile.close
 
