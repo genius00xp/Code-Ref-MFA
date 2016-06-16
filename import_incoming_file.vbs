@@ -326,9 +326,7 @@ Dim fso,TotalFile,ImportFolderPath,ImportFolder,TotalFileImported
 Dim RuntimeError
 Sub RunScript()
 	TotalFile = 0
-
-    TotalFileImported = ImportSFTPFile(ImportCoID)
-	''TotalFileImported = ImportFTPFile(ImportCoID)
+	TotalFileImported = ImportFTPFile(ImportCoID)
     NoFile=false
 
 	RunResult = "Total Files Imported: "  & TotalFileImported & " out of " & TotalFile & " file(s)"	
@@ -391,63 +389,12 @@ Sub ArchiveFile(byval FilePath,byval CoID)
         BuildArrayFromCsv(DestFolder & "\" & NewFileName)
 	end if
 End Sub
-
-Function ImportSFTPFile(byval CoID)
-	' Setup session options
-    Dim sessionOptions
-    Set sessionOptions = WScript.CreateObject("WinSCP.SessionOptions")
-    With sessionOptions
-        .Protocol = Protocol_ftp
-        .HostName = "IBT-150615-01"
-        .PortNumber = 20
-        .UserName = "IBASE\hong-guan.chuah"
-        .Password = "Edifier1019!"
-        ''.FtpSecure = FtpSecure_Implicit
-        ''.SshHostKeyFingerprint = "ssh-rsa 2048 xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:x"
-        ''.TlsHostCertificateFingerprint = "25:de:ae:78:0b:a9:01:73:0e:2d:35:06:2f:ca:3b:bb:71:02:d1:b5"
-        ''.GiveUpSecurityAndAcceptAnyTlsHostCertificate = true
-        .GiveUpSecurityAndAcceptAnySshHostKey = true
-    End With
- 
-    Dim session 
-    Set session = WScript.CreateObject("WinSCP.Session")
- 
-    ' Connect
-    session.Open sessionOptions
-    WScript.echo "OK"
- 
-    Dim transferOptions
-    Set transferOptions = WScript.CreateObject("WinSCP.TransferOptions")
-    wscript.echo TransferMode_Binary
-    transferOptions.TransferMode = TransferMode_Binary
- 
-    Dim transferResult
-    test_file = "D:\orders\*"
-    Set transferResult = session.PutFiles(test_file, "/", False, transferOptions)
- 
-    ' Throw on any error
-    transferResult.Check
- 
-    ' Print results
-    Dim transfer
-    For Each transfer In transferResult.Transfers
-        WScript.Echo "Upload of " & transfer.FileName & " succeeded"
-    Next
- 
-    ' Disconnect, clean up
-    session.Dispose
-
-    	
-End Function
-
 Function ImportFTPFile(byval CoID)
 	ImportFTPFile = 0
 	Dim RS,sqlstr,i
     Dim files,f,Folders,ValidFolder,filepath,archivefolder 
 
 	Set fso = CreateObject("Scripting.FileSystemObject")
-
-    ''Can be configurable in init_appkey.inc
 	ImportFolderPath = Application("UploadFolderPath") & "_DataImport"
 
     if fso.FolderExists(ImportFolderPath)=false then
@@ -459,7 +406,7 @@ Function ImportFTPFile(byval CoID)
 
         if Files.Count=0 then
 		    NoFile = true
-		    ErrorMsg = "No file found in G-Cloud sFTP folder"
+		    ErrorMsg = "No file found in folder"
         else
             for each f in Files
                ErrorMsg = "" ''BuildArrayFromCsv(f.path)
