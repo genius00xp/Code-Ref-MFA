@@ -69,6 +69,33 @@ Sub GetAppKey()
         next
          SERVER_NAME = Application("ServerName")
 	    SERVER_PORT = Application("ServerPort")
+
+        ''init appkey from database
+        dim systemdb
+        Dim RS
+        set systemdb = CreateObject("ADODB.Connection")
+        systemdb.cursorLocation = 3
+        systemdb.Open(Application("SystemConnectionStr"))
+        systemdb.BeginTrans
+        set RS = systemdb.Execute("SELECT * FROM SYS_tblLookup WHERE LookupID='AppKey' AND LookupValue1 LIKE 'SFTP%'")
+        do while RS.EOF=false
+			key = trim(RS("LookupValue1"))
+			value = trim(RS("LookupValue2"))
+			if IsNumeric(value) then 
+				value=CDbl(value)
+			elseif InStr(1,key,"Array")>0 then
+				value = split(value,",")	''set array
+			end if
+
+			''assign to dictionary
+		    Application.Add key, value
+			RS.Movenext
+		loop
+		RS.Close
+	
+		''systemdb.Close
+		set systemdb = Nothing
+
     end if    
 End Sub
 Function GetScriptValue(byval FunctionName, byval ArgumentArray)
@@ -326,80 +353,35 @@ end if
 ProcessStatus "COMPLETED!"
 '---------------------- PROCEDURES LIST ----------------------------------------
 Dim fso,TotalFile,ImportFolderPath,ImportFolder,TotalFileImported,TotalFileExported
+Dim ReturnResult
 Dim RuntimeError
 Sub RunScript()
 	TotalFile = 0
+    TotalFileExported = 0
+    TotalFileImported = 0
 
-    TotalFileExported = ExportSFTPFile(ImportCoID)
+    ReturnResult = ExportSFTPFile(ImportCoID)
     if TotalFileExported <> 0 then
-	''TotalFileImported = ImportSFTPFile(ImportCoID)
+	    TotalFileImported = ImportSFTPFile(ImportCoID)
     NoFile=false
     end if
-
-    RunResult = RunResult +  " Total Files Exported: "  & TotalFileExported & " file(s)" & vbnewline
-	RunResult = RunResult +  " Total Files Imported: "  & TotalFileImported & " file(s)"	
-	ProcessStatus RunResult
-	if TotalFile=0 then
-		if ErrorMsg<>"" then
-			ProcessStatus "Error: " & ErrorMsg
-		end if
-		if RuntimeError<>"" then
-			ProcessStatus RuntimeError
-		end if
-	else
-		'ErrorMsg=""
-	end if
-End Sub
-Sub DeleteFileOnly(byval FilePath) ''chooi teng
-	Dim fso
-	set fso = CreateObject("Scripting.FileSystemObject")
-	if fso.FileExists(FilePath) then
-		fso.DeleteFile FilePath,true
-	end if		
-End Sub
-Sub DeleteOldFile(FilePath, maxAgeInDays)
-    dim ArchieveFolder,files,f
-  set ArchieveFolder = fso.GetFolder(FilePath)
-
-    set files = ArchieveFolder.Files
-
-    if Files.Count=0 then
-	    NoFile = true
-	    ErrorMsg = "No file found in folder"
+  
+	if ErrorMsg<>"" then
+        RunResult = ""
+		ProcessStatus "Error: " & ErrorMsg
     else
-        for each f in Files
-            If DateDiff("d", f.DateLastModified, Date) > maxAgeInDays Then
-            f.Delete True
-          End If
-	    next
-        ''BuildArrayFromCsv(filepath)
-    end if
-
-  Set fso = Nothing
-End Sub
-Sub ArchiveFile(byval FilePath,byval CoID)
-	''move file to _Upload/_Archive
-	dim archivefolder,FileName,NewFileName,DestFolder
-	if fso.FileExists(FilePath) then
-		archivefolder = Application("UploadFolderPath") & "_Archive"
-		FileName = fso.GetFile(FilePath).Name
-		DestFolder = archivefolder 
-		
-		if fso.FolderExists(archivefolder)=false then
-			fso.CreateFolder(archivefolder)
-		end if
-		
-		if fso.FileExists(DestFolder & "\" & FileName) then
-            DeleteFileOnly(DestFolder & "\" & FileName)
-		end if
-        NewFileName = FileName
-		fso.MoveFile FilePath,DestFolder & "\"
-        BuildArrayFromCsv(DestFolder & "\" & NewFileName)
+        RunResult = RunResult & vbnewline
+        RunResult = ReturnResult & vbnewline
+        RunResult = RunResult +  " Total Files Exported: "  & TotalFileExported & " file(s)" & vbnewline
+	    RunResult = RunResult +  " Total Files Imported: "  & TotalFileImported & " file(s)" & vbnewline	
+	    ProcessStatus RunResult
 	end if
+
 End Sub
 
 Function ExportSFTPFile(byval CoID)
-    ExportSFTPFile = 0
+    ExportSFTPFile = ""
+    TotalFileExported = 0
     Dim i
     i = 0
 	' Setup session options
@@ -425,23 +407,30 @@ Function ExportSFTPFile(byval CoID)
     ' Query for errors
     If Err.Number <> 0 Then
         ErrorMsg = "Error opening session: " & Err.Description
-        WScript.Echo "Error opening session: " & Err.Description
-        WScript.Quit 1
-    End If
- 
+        ''WScript.Quit 1
+    else
     ' Restore default error handling
     On Error GoTo 0
 
-    WScript.echo "OK"
- 
     Dim transferOptions
     Set transferOptions = WScript.CreateObject("WinSCP.TransferOptions")
-    wscript.echo TransferMode_Binary
     transferOptions.TransferMode = TransferMode_Binary
- 
+
+    'GetFiles ---  Downloads one or more files from remote directory to local directory.   	
+    'public TransferOperationResult GetFiles(
+    '    string remotePath,
+    '    string localPath,
+    '    bool remove = false,
+    '    TransferOptions options = null
+    ')
+    '    string remotePath	Full path to remote directory followed by slash and wildcard to select files or subdirectories to download. To download all files in a directory, use mask *.
+    '    string localPath	Full path to download the file to. When downloading multiple files, the filename in the path should be replaced with operation mask or omitted (path ends with backslash).
+    '    bool remove	When set to true, deletes source remote file(s) after transfer. Defaults to false.
+    '    TransferOptions options	Transfer options. Defaults to null, what is equivalent to new TransferOptions().
+
     Dim transferResult
-    ftp_file = "d:\DownloadTemp\*"
-    Set transferResult = session.PutFiles(ftp_file, "/", False, transferOptions)
+    localpath_file = "d:\DownloadTemp\"
+    Set transferResult = session.GetFiles("/*", localpath_file, False, transferOptions)
  
     ' Throw on any error
     transferResult.Check
@@ -449,22 +438,24 @@ Function ExportSFTPFile(byval CoID)
     ' Print results
     Dim transfer
     For Each transfer In transferResult.Transfers
-        WScript.Echo "Upload of " & transfer.FileName & " succeeded"
+        ReturnResult = ReturnResult + "Download of " & transfer.FileName & " succeeded" & vbnewline
         i = i + 1
     Next
 
     if i = 0 then
-        ErrorMsg = "No file found in G-Cloud sFTP folder"
+        ErrorMsg = ErrorMsg + "No file found in G-Cloud sFTP folder" & vbnewline
     end if
 
-    ExportSFTPFile = i
+    ExportSFTPFile = ReturnResult
+    TotalFileExported = i
  
     ' Disconnect, clean up
     session.Dispose
+    end if 
 End Function
 
 Function ImportSFTPFile(byval CoID)
-	ImportFTPFile = 0
+	TotalFileImported = 0
 	Dim RS,sqlstr,i
     Dim files,f,Folders,ValidFolder,filepath,archivefolder 
     i = 0
@@ -477,36 +468,57 @@ Function ImportSFTPFile(byval CoID)
     if fso.FolderExists(ImportFolderPath)=false then
 		Errormsg = "FTP folder does not exist" & vbNewLine & FTPFolderPath
     else
-    set ImportFolder = fso.GetFolder(ImportFolderPath)
+        set ImportFolder = fso.GetFolder(ImportFolderPath)
 
-        set files = ImportFolder.Files
+        if Errormsg = "" then
+            set files = ImportFolder.Files
 
-        if Files.Count=0 then
-		    NoFile = true
-		    ErrorMsg = "No file found in G-Cloud sFTP folder"
-        else
-            for each f in Files
-               ErrorMsg = "" 
-               if ErrorMsg = "" then
-                Call ArchiveFile(f.path,36)  ''move file to _Upload/_Archive
-               end if
-               i = i + 1
-			next
-            ''BuildArrayFromCsv(filepath)
-            ImportFTPFile = i
+            if Files.Count=0 then
+		        NoFile = true
+		        ErrorMsg = ErrorMsg + "No file found in G-Cloud sFTP folder" & vbnewline
+            else
+                for each f in Files
+                    ErrorMsg = "" 
+                    if ErrorMsg = "" then
+                    Call ArchiveFile(f.path,36)  ''move file to _Upload/_Archive
+                    end if
+                    i = i + 1
+		        next
+                TotalFileImported = i
+            end if
         end if
 
-       archivefolder = Application("UploadFolderPath") & "_Archive"
-       Call DeleteOldFile(archivefolder, 90)
+        archivefolder = Application("UploadFolderPath") & "_Archive"
+        ''Call DeleteOldFile(archivefolder, 90)
         
-        if Errormsg <> "" then
-            ErrorMsg = ErrorMsg
-        end if
+'        if Errormsg <> "" then
+'            ErrorMsg = ErrorMsg
+'        end if
 
     end if
-
-    	
 End Function
+
+Sub ArchiveFile(byval FilePath,byval CoID)
+	''move file to _Upload/_Archive
+	dim archivefolder,FileName,NewFileName,DestFolder
+	if fso.FileExists(FilePath) then
+		archivefolder = Application("UploadFolderPath") & "_Archive"
+		FileName = fso.GetFile(FilePath).Name
+		DestFolder = archivefolder 
+		
+		if fso.FolderExists(archivefolder)=false then
+			fso.CreateFolder(archivefolder)
+		end if
+		
+		if fso.FileExists(DestFolder & "\" & FileName) then
+            DeleteFileOnly(DestFolder & "\" & FileName)
+		end if
+        NewFileName = FileName
+		fso.MoveFile FilePath,DestFolder & "\"
+        ReturnResult = ReturnResult + FileName + " moved to " + DestFolder + vbnewline
+        BuildArrayFromCsv(DestFolder & "\" & NewFileName)
+	end if
+End Sub
 
 Function BuildArrayFromCsv(filepath)    'Function to read file and load into an array
     BuildArrayFromCsv = ""
@@ -541,13 +553,13 @@ Function BuildArrayFromCsv(filepath)    'Function to read file and load into an 
         UnitperSGD = fields(3)
 
         if NOT IsNumeric(SGDperUnit) then 
-		errorMessage = "SGDperUnit invalid format"
+		errorMessage = filepath + ": SGDperUnit invalid format" & vbnewline
         end if
         if NOT IsNumeric(UnitperSGD) then 
-		errorMessage = "UnitperSGD invalid format"
+		errorMessage = filepath + ": UnitperSGD invalid format" & vbnewline
         end if
         if NOT IsDate(Date) then
-		errorMessage = "Date invalid format"
+		errorMessage = filepath + ": Date invalid format" & vbnewline
         end if
 
         if errorMessage = "" then
@@ -572,6 +584,34 @@ Function BuildArrayFromCsv(filepath)    'Function to read file and load into an 
 
     BuildArrayFromCsv = errorMessage
 End Function
+
+Sub DeleteOldFile(FilePath, maxAgeInDays)
+  Dim ArchieveFolder,files,f
+  set ArchieveFolder = fso.GetFolder(FilePath)
+
+    set files = ArchieveFolder.Files
+
+    if Files.Count=0 then
+	    NoFile = true
+	    ErrorMsg = ErrorMsg & " No file found in folder"
+    else
+        for each f in Files
+            If DateDiff("d", f.DateLastModified, Date) > maxAgeInDays Then
+            f.Delete True
+          End If
+	    next
+    end if
+
+  Set fso = Nothing
+End Sub
+
+Sub DeleteFileOnly(byval FilePath) ''chooi teng
+	Dim fso
+	set fso = CreateObject("Scripting.FileSystemObject")
+	if fso.FileExists(FilePath) then
+		fso.DeleteFile FilePath,true
+	end if		
+End Sub
 
 Sub ProcessStatus(byval Desc)
 	if DisplayStatus=true then
